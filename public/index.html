@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blender MCP Relay</title>
+<meta name="description" content="Drive your own Blender from Claude or any MCP client, from anywhere. Private, signed-in, outbound-only.">
+<meta name="theme-color" content="#07080c">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<canvas id="stage" aria-hidden="true"></canvas>
+<div class="veil"></div>
+<div class="wrap">
+  <nav class="top">
+    <a class="brand" href="/"><img src="/icon.svg" alt="">Blender MCP Relay<small>v2</small></a>
+    <span class="sp"></span>
+    <div class="who hidden" id="who"><img id="avatar" alt=""><span id="login"></span><button class="btn sm ghost" id="logout" type="button">Sign out</button></div>
+  </nav>
+
+  <!-- Signed out -->
+  <section id="landing" class="hidden">
+    <div class="hero">
+      <p class="eyebrow">Model Context Protocol · for Blender</p>
+      <h1>Your Blender, <span class="grad">anywhere an AI can reach.</span></h1>
+      <p class="lede">A private relay between Claude (or any MCP client) and the Blender on your own computer. Sign in once, approve each app, pair each Blender. Nothing on your computer listens for connections.</p>
+      <div class="row">
+        <a class="btn primary" id="signin" href="/auth/github?next=/">
+          <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38v-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.06-.49.06-.49.8.06 1.23.83 1.23.83.72 1.22 1.88.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.65-.89-3.65-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+          Sign in with GitHub</a>
+        <a class="btn ghost" href="#how">How it works</a>
+      </div>
+      <p class="err" id="setup"></p>
+      <div class="chips"><span class="chip">OAuth 2.1 · PKCE</span><span class="chip">Owner-only sign-in</span><span class="chip">Per-device pairing</span><span class="chip">Instant hand-off (BLPOP)</span><span class="chip">Revoke anything, anytime</span></div>
+    </div>
+    <div class="steps" id="how">
+      <div class="card"><h2>Pair Blender</h2><p class="muted">Install the add-on, press <b>Pair</b>, approve the code here. Each Blender gets its own key, revocable in one click.</p></div>
+      <div class="card"><h2>Connect your AI</h2><p class="muted">Add the relay URL as a connector in Claude. It asks you to sign in and approve, like Figma's or GitHub's MCP.</p></div>
+      <div class="card"><h2>Create</h2><p class="muted">Your AI reads the scene, runs Python, and sees the viewport and renders, while you watch Blender change.</p></div>
+    </div>
+  </section>
+
+  <!-- Signed in -->
+  <section id="dash" class="hidden">
+    <div class="hero compact">
+      <p class="eyebrow">Control room</p>
+      <h1>Hello, <span class="grad" id="hello"></span></h1>
+    </div>
+    <div class="grid">
+      <div class="card s5">
+        <h2>Blender</h2><p class="sub">Paired computers ask the relay for work; they are online while connected.</p>
+        <div class="status"><div class="orb" id="orb"></div><div><b id="bl-state">Checking…</b><span class="faint" id="bl-seen"></span></div></div>
+      </div>
+      <div class="card s7">
+        <h2>Connector URL</h2><p class="sub">Claude: Settings → Connectors → Add custom connector. You will be asked to approve it here.</p>
+        <div class="copy"><code id="url"></code><button class="btn" id="copy" type="button">Copy</button></div>
+      </div>
+      <div class="card s5">
+        <h2>Pair a Blender</h2><p class="sub">In Blender: N panel → MCP Relay → Pair. Enter the code it shows.</p>
+        <form id="pairform" class="row" autocomplete="off">
+          <input class="code" id="code" maxlength="9" placeholder="XXXX-XXXX" aria-label="Pairing code" spellcheck="false">
+          <button class="btn primary wide" type="submit">Find this Blender</button>
+        </form>
+        <div id="pairask" class="hidden gap-top">
+          <p class="muted">Allow <b id="pairname"></b> to take jobs from this relay?</p>
+          <div class="row"><button class="btn ghost" id="pairdeny" type="button">Deny</button><button class="btn primary" id="pairallow" type="button">Allow</button></div>
+        </div>
+        <p class="err" id="pairerr" role="alert"></p>
+      </div>
+      <div class="card s7">
+        <h2>Paired Blenders</h2><p class="sub">Unpair one and its key stops working at once.</p>
+        <ul class="list" id="blenders"></ul>
+      </div>
+      <div class="card s6">
+        <h2>Connected apps</h2><p class="sub">MCP clients you approved. Revoke ends their access and refresh tokens.</p>
+        <ul class="list" id="clients"></ul>
+      </div>
+      <div class="card s6">
+        <h2>Activity</h2><p class="sub">The last 60 events: tool calls with time taken, sign-ins, approvals.</p>
+        <div class="log" id="log"></div>
+      </div>
+      <div class="card s12">
+        <div class="row spread">
+          <div><h2>Kill switch</h2><p class="sub flush">Revoke every app, unpair every Blender, drop queued jobs, and sign out everywhere.</p></div>
+          <button class="btn danger" id="killall" type="button">Revoke everything</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer><span>Private relay · your Vercel, your Redis, your Blender</span><a href="https://modelcontextprotocol.io" rel="noopener">MCP</a></footer>
+</div>
+<div class="toast" id="toast" role="status"></div>
+<script type="module" src="/scene.js"></script>
+<script type="module" src="/app.js"></script>
+</body>
+</html>

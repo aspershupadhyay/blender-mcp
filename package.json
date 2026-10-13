@@ -1,18 +1,17 @@
 {
   "name": "blender-mcp-relay",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "description": "Remote MCP server on Vercel that drives a running Blender through a relay add-on.",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "node test/dev-server.js",
-    "test": "node test/e2e.js"
+    "test": "node --test test/*.test.js"
   },
   "dependencies": {
-    "@upstash/redis": "^1.39.0"
-  },
-  "devDependencies": {
-    "@modelcontextprotocol/sdk": "^1.32.1"
+    "ioredis": "^5.11.1"
   }
 }

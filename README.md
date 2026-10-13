@@ -1,66 +1,91 @@
-# blender-mcp relay
+<p align="center"><img src="public/icon-192.png" width="96" alt="Blender MCP Relay"></p>
 
-Let Claude (or any MCP client) drive the Blender on your computer from anywhere, through your own
-server on Vercel. Nothing on your computer listens for connections: the Blender add-on reaches out
-to the relay and asks for work.
+# Blender MCP Relay
+
+Drive the Blender on your own computer from Claude, or any MCP client, from anywhere. A private relay
+on your Vercel: you sign in with GitHub, approve each app the way you approve Figma's or GitHub's MCP
+connectors, and pair each Blender with a code. Nothing on your computer listens for connections.
 
 ```
-Claude ──MCP──▶ Vercel /api/mcp ──job──▶ Upstash Redis ◀──long poll── Blender add-on (your computer)
-       ◀─result─                ◀─result─               ──result──▶
+Claude ──MCP + OAuth──▶ Vercel (bom1) ──BLPOP──▶ Redis ◀──BLPOP── Blender add-on (outbound HTTPS)
 ```
 
-## Warning: this is remote code execution, on purpose
+## How it is secured
 
-`execute_python` runs any Python inside your Blender, with your user's rights on your computer.
-Anyone who has your `RELAY_TOKEN` can do that. So:
+| Door | Who gets in | How |
+| --- | --- | --- |
+| Web page | You only | GitHub sign-in; only logins in `ALLOWED_GITHUB_LOGINS`. Session = signed cookie (`__Host-`, HttpOnly, Secure, SameSite) plus a server record, 12 h. |
+| MCP (`/mcp`) | Apps you approved | OAuth 2.1: dynamic client registration, PKCE S256 only, exact redirect match, 1 h access tokens, 30-day refresh tokens rotated on every use. Replaying an old refresh token revokes that whole grant. |
+| Blender bridge | Blenders you paired | Device-code pairing: the add-on shows a code, you approve it on the page while signed in, and that Blender gets its own key, handed over once. |
 
-- Use a long random token (the server refuses one under 32 characters) and never share it or the connector URL.
-- Press **Disconnect** in Blender when you are not using it. While disconnected, nothing can reach your computer.
-- If the token leaks, change `RELAY_TOKEN` in Vercel and redeploy at once.
-- Keep this repository private: the token is not in it, but the setup is.
+- Every token is random (256 bit) and stored only as a SHA-256 hash.
+- Consent and pairing need your session and a CSRF token. The consent request is bound to your session.
+- Rate limits on sign-in, registration, token, and pairing endpoints.
+- Strict security headers: CSP `'self'` only (three.js is vendored), no framing, HSTS, no referrer.
+- **Kill switch** on the dashboard: revokes every app, unpairs every Blender, drops queued jobs, and signs out every session.
+- Jobs older than 55 s are never run (a caller that gave up never fires late).
+
+`execute_python` still means: an approved app can run any Python in your Blender, with your rights on
+your computer. Approve only apps you trust, and press **Disconnect** in Blender when you stop.
+
+## Speed
+
+- **No polling.** Jobs and results move through Redis `BLPOP` over TCP: Blender gets a job the moment
+  it is queued, and the MCP call gets the result the moment Blender pushes it. Round trip = network + Blender's work.
+- **Close to you.** Functions run in `bom1` (Mumbai, `vercel.json`). Create the Redis database in the same region (AWS ap-south-1).
+- **One warm function.** All routes go through one function, so it stays warm.
+- **Renders at the returned size**, not rendered big and shrunk.
+- Rust would not help: the time is in the network and in Blender, not in the relay's code.
 
 ## Set it up (about 15 minutes)
 
-1. **Token.** Make one: `openssl rand -hex 32` (or any 64 random characters).
-2. **Deploy.** On vercel.com: Add New → Project → import this repository → Deploy (no build settings needed).
-3. **Queue.** In the Vercel project: Storage → Marketplace → **Upstash for Redis** → create (the free plan is enough) → connect it to this project. This adds the Redis variables.
-4. **Secret.** Project → Settings → Environment Variables: add `RELAY_TOKEN` = your token (Production). Then Deployments → ⋯ → Redeploy.
-5. **Blender add-on.** In Blender 4.2 or later: Edit → Preferences → Add-ons → ⌄ → Install from Disk → `blender/blender_mcp_relay.py`. Turn it on, open its preferences, and set **Relay URL** = `https://<your-project>.vercel.app` and **Token** = your token.
-6. **Connect.** In the 3D viewport press N → **MCP Relay** tab → **Connect**. The status turns to *Connected*.
-7. **Claude.** At https://claude.ai/customize/connectors add a custom connector with the URL
-   `https://<your-project>.vercel.app/api/mcp?key=<your token>`. Start a new chat or Claude Code session (connectors load when a session starts).
-
-Ask Claude to "run connection_status" first.
+1. **GitHub OAuth app.** https://github.com/settings/developers → New OAuth App.
+   Homepage: `https://<project>.vercel.app`. Callback: `https://<project>.vercel.app/auth/github/callback`.
+   Note the Client ID and make a Client secret.
+2. **Vercel.** Add New → Project → import `blender-mcp` → Deploy.
+3. **Redis.** Project → Storage → Marketplace → **Upstash for Redis** → create (region: ap-south-1, Mumbai) → connect to the project. It adds `REDIS_URL` / `KV_URL`.
+4. **Environment variables** (Settings → Environment Variables, Production):
+   - `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` from step 1
+   - `ALLOWED_GITHUB_LOGINS` = `aspershupadhyay` (comma-separated for more)
+   - `SESSION_SECRET` = output of `openssl rand -hex 32`
+   - optional `PUBLIC_URL` = `https://<your domain>` if you use a custom domain
+   Then Deployments → ⋯ → **Redeploy**.
+5. **Sign in** at `https://<project>.vercel.app`.
+6. **Blender** (4.2 or later): Edit → Preferences → Add-ons → ⌄ → Install from Disk → `blender/blender_mcp_relay.py`.
+   Set **Relay URL**. In the 3D viewport press N → **MCP Relay** → **Pair**. Approve the code on the page.
+   It connects by itself; later, press **Connect**.
+7. **Claude.** Copy the connector URL from the dashboard (`https://<project>.vercel.app/mcp`), add it at
+   https://claude.ai/customize/connectors, and approve it on the consent page. Start a new chat or session.
 
 ## Tools
 
 | Tool | What it does |
 | --- | --- |
-| `connection_status` | Is Blender connected now? |
-| `get_scene_info` | Objects, camera, engine, frame. |
-| `get_object_info` | One object: transform, mesh counts, materials, bones, shape keys. |
-| `execute_python` | Run Python in Blender (`bpy`); returns printed output and `result`. |
-| `viewport_screenshot` | Picture of the 3D viewport (Blender with a window). |
-| `render_image` | Render the active camera; returns the image. |
-| `get_result` | Collect a job that took longer than one request (about 50 s). |
-
-## Limits
-
-- One request waits at most about 50 s (Vercel function limit, `vercel.json`). Longer jobs return a job id; `get_result` collects them.
-- Jobs run one at a time on Blender's main thread; Blender's interface pauses while a job runs.
-- Upstash usage: the add-on's long poll costs about one Redis command a second while connected
-  (about 3,600 an hour). Upstash's free plan (500,000 commands a month at the time of writing) covers
-  well over 100 connected hours a month. Disconnect when idle.
-- Claude's custom connectors cannot send headers, so the MCP door takes the token in the URL (`?key=`).
-  The add-on uses an `Authorization` header. OAuth would be stronger; it is not built.
+| `connection_status` | Is a paired Blender connected now? |
+| `get_scene_info` | Objects, camera, engine, resolution, frame, file. |
+| `get_object_info` | One object: transform, mesh counts, UVs, attributes, shape keys, materials and nodes, bones. |
+| `execute_python` | Run Python in Blender (`bpy`; variables persist). Returns output and `result`. |
+| `viewport_screenshot` | Picture of the 3D viewport. |
+| `render_image` | Render the active camera; scene settings are restored after. |
+| `get_result` | Collect a job that ran past one request (about 50 s). |
 
 ## Develop
 
 ```sh
 npm install
-RELAY_TOKEN=$(openssl rand -hex 32) npm run dev     # local relay on http://localhost:3000, in-memory queue
-RELAY_TOKEN=... npm test                             # end to end with headless Blender (pip install bpy)
+npm test                      # 13 security and protocol tests, in-memory store, no Blender
+SESSION_SECRET=$(openssl rand -hex 32) GITHUB_CLIENT_ID=… GITHUB_CLIENT_SECRET=… ALLOWED_GITHUB_LOGINS=you npm run dev
 ```
 
-The MCP endpoint is a small stateless Streamable HTTP server (`api/mcp.js`, JSON replies, no
-server-sent events): `initialize`, `ping`, `tools/list`, `tools/call`.
+Without `REDIS_URL` the relay uses an in-memory store (one process; development only).
+
+## Files
+
+- `api/router.js`: the one function: routes, dashboard API, kill switch
+- `lib/oauth.js`: OAuth 2.1 server for MCP clients
+- `lib/github.js`: owner sign-in
+- `lib/blender.js`: pairing and the bridge
+- `lib/tools.js`, `lib/mcp.js`: tools and the MCP protocol (Streamable HTTP, JSON replies)
+- `lib/security.js`, `lib/store.js`: tokens, sessions, CSRF, rate limits, headers; Redis or memory
+- `public/`: the 3D web page (three.js, vendored), icon, styles
+- `blender/blender_mcp_relay.py`: the add-on
