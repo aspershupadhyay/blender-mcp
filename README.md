@@ -39,23 +39,7 @@ your computer. Approve only apps you trust, and press **Disconnect** in Blender 
 
 ## Set it up (about 15 minutes)
 
-1. **GitHub OAuth app.** https://github.com/settings/developers → New OAuth App.
-   Homepage: `https://<project>.vercel.app`. Callback: `https://<project>.vercel.app/auth/github/callback`.
-   Note the Client ID and make a Client secret.
-2. **Vercel.** Add New → Project → import `blender-mcp` → Deploy.
-3. **Redis.** Project → Storage → Marketplace → **Upstash for Redis** → create (region: ap-south-1, Mumbai) → connect to the project. It adds `REDIS_URL` / `KV_URL`.
-4. **Environment variables** (Settings → Environment Variables, Production):
-   - `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` from step 1
-   - `ALLOWED_GITHUB_LOGINS` = `aspershupadhyay` (comma-separated for more)
-   - `SESSION_SECRET` = output of `openssl rand -hex 32`
-   - optional `PUBLIC_URL` = `https://<your domain>` if you use a custom domain
-   Then Deployments → ⋯ → **Redeploy**.
-5. **Sign in** at `https://<project>.vercel.app`.
-6. **Blender** (4.2 or later): Edit → Preferences → Add-ons → ⌄ → Install from Disk → `blender/blender_mcp_relay.py`.
-   Set **Relay URL**. In the 3D viewport press N → **MCP Relay** → **Pair**. Approve the code on the page.
-   It connects by itself; later, press **Connect**.
-7. **Claude.** Copy the connector URL from the dashboard (`https://<project>.vercel.app/mcp`), add it at
-   https://claude.ai/customize/connectors, and approve it on the consent page. Start a new chat or session.
+Follow **[SETUP.md](SETUP.md)**: exact steps, click by click, for anyone (Vercel, GitHub sign-in app, Redis, settings, Blender add-on, Claude connector), with fixes for common problems.
 
 ## Tools
 
