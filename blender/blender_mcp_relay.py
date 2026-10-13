@@ -1,7 +1,7 @@
 bl_info = {
     "name": "MCP Relay",
     "author": "blender-mcp",
-    "version": (2, 0, 0),
+    "version": (2, 0, 1),
     "blender": (4, 2, 0),
     "location": "3D Viewport > Sidebar (N) > MCP Relay",
     "description": "Lets an AI assistant drive this Blender through your own relay server (Vercel). Outbound only.",
@@ -239,7 +239,14 @@ def _render(args):
             sc.render.image_settings.file_format)
     try:
         if args.get("engine"):
-            sc.render.engine = args["engine"]
+            names = {e.identifier for e in sc.render.bl_rna.properties["engine"].enum_items}
+            eng = str(args["engine"]).upper()
+            alias = {"EEVEE": "BLENDER_EEVEE", "BLENDER_EEVEE_NEXT": "BLENDER_EEVEE", "WORKBENCH": "BLENDER_WORKBENCH"}
+            if eng not in names:
+                eng = alias.get(eng, eng)
+            if eng not in names and eng == "BLENDER_EEVEE":
+                eng = "BLENDER_EEVEE_NEXT"  # Blender 4.2 to 4.x
+            sc.render.engine = eng
         if args.get("width"):
             sc.render.resolution_x = int(args["width"])
         if args.get("height"):
